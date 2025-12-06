@@ -264,12 +264,12 @@ palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
 
     /* 1. next_idx 부터 끝까지 검색 */
     page_idx = bitmap_scan(pool->used_map, pool->next_idx, 
-                           size - pool->next_idx, page_cnt, false);
+                           size - pool->next_idx, false);
 
     /* 2. 찾지 못했다면, 처음(0)부터 next_idx까지 검색 (순환) */
     if (page_idx == BITMAP_ERROR) {
         page_idx = bitmap_scan(pool->used_map, 0, 
-                               pool->next_idx, page_cnt, false);
+                               pool->next_idx, false);
     }
     
     if (page_idx != BITMAP_ERROR) {
@@ -295,7 +295,7 @@ palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
     while (current_idx < size) {
         /* 현재 위치에서 빈 페이지 블록의 크기를 찾습니다. */
         size_t free_run_len = bitmap_scan(pool->used_map, current_idx, 
-                                           size - current_idx, 1, false);
+                                           size - current_idx, false);
 
         /* 빈 블록을 찾지 못했다면 검색 종료 */
         if (free_run_len == BITMAP_ERROR) {
@@ -305,8 +305,8 @@ palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
         /* 빈 블록의 끝 인덱스를 찾습니다. */
         size_t run_end_idx = free_run_len + bitmap_scan(pool->used_map, 
                                                         free_run_len, 
-                                                        size - free_run_len, 
-                                                        1, true);
+                                                        size - free_run_len 
+                                                        , true);
         
         /* 현재 빈 블록의 실제 크기 */
         size_t current_run_size = run_end_idx - free_run_len;
