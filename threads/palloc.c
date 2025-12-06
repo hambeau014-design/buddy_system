@@ -30,6 +30,12 @@ struct pool {
     struct lock lock;        /* Mutual exclusion. */
     struct bitmap *used_map; /* Bitmap of free pages. */
     uint8_t *base;           /* Base of pool. */
+
+   //[추가]다음 Fit 검색을 시작할 인덱스 (Next-Fit 구현에 필수)
+    size_t next_idx;            /* Index to start the next scan for next-fit. */ 
+    
+    //[추가]pool에 포함된 총 페이지 수 (bitmap_size()와 동일할 수 있으나, 일반적으로 명시)
+    size_t pages;               /* Total number of pages in the pool. */
 };
 
 /* Two pools: one for kernel data, one for user pages. */
@@ -87,7 +93,7 @@ palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
         return NULL;
 
     lock_acquire(&pool->lock);
-   //할당 모드에 따른 multiple-partition allocation 처리
+   //[추가]할당 모드에 따른 multiple-partition allocation 처리
    switch (mode) {
         case PAL_FIRST_FIT:
             /* First Fit (기존 구현과 동일): 처음(0)부터 검색 */
