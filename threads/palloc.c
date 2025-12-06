@@ -86,7 +86,32 @@ palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
         return NULL;
 
     lock_acquire(&pool->lock);
-    page_idx = bitmap_scan_and_flip(pool->used_map, 0, page_cnt, false);
+   //할당 모드에 따른 multiple-partition allocation 처리
+   switch (mode) {
+        case PAL_FIRST_FIT:
+            /* First Fit (기존 구현과 동일): 처음(0)부터 검색 */
+            page_idx = bitmap_scan_and_flip(pool->used_map, 0, page_cnt, false);
+            break;
+
+        case PAL_NEXT_FIT:
+            /* Next Fit: 전용 스캔 함수 사용 */
+            page_idx = palloc_next_fit_scan(pool, page_cnt);
+            break;
+
+        case PAL_BEST_FIT:
+            /* Best Fit: 전용 스캔 함수 사용 */
+            page_idx = palloc_best_fit_scan(pool, page_cnt);
+            break;
+
+        case PAL_BUDDY:
+            /* Buddy System: 여기에 Buddy System 할당 로직을 구현해야 함 */
+            PANIC("Buddy System is not implemented yet!");
+            break;
+
+        default:
+            NOT_REACHED();
+    }
+   
     lock_release(&pool->lock);
 
     if (page_idx != BITMAP_ERROR)
@@ -199,3 +224,80 @@ page_from_pool(const struct pool *pool, void *page)
 
     return page_no >= start_page && page_no < end_page;
 }
+//----------------------------------------------------------------------------------------------
+//firt-fit방법 : 가장 처음 연속된 빈 공간 발견시, 바로 할당
+static size_t
+palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
+{
+    size_t page_idx = BITMAP_ERROR;
+    size_t size = bitmap_size(pool->used_map);
+
+    /* 1. next_idx 부터 끝까지 검색 */
+    page_idx = bitmap_scan(pool->used_map, pool->next_idx, 
+                           size - pool->next_idx, page_cnt, false);
+
+    /* 2. 찾지 못했다면, 처음(0)부터 next_idx까지 검색 (순환) */
+    if (page_idx == BITMAP_ERROR) {
+        page_idx = bitmap_scan(pool->used_map, 0, 
+                               pool->next_idx, page_cnt, false);
+    }
+    
+    if (page_idx != BITMAP_ERROR) {
+        /* 찾은 경우 할당 비트 플립 및 next_idx 업데이트 */
+        bitmap_set_multiple(pool->used_map, page_idx, page_cnt, true);
+        /* 다음 검색 시작 위치를 현재 할당 블록의 끝으로 설정 */
+        pool->next_idx = (page_idx + page_cnt) % size;
+    }
+    
+    return page_idx;
+}
+
+//best-fit방법 : 모든 hole 탐새 후 알맞는 빈 공간에 할당
+static size_t
+palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
+{
+    size_t size = bitmap_size(pool->used_map);
+    size_t best_idx = BITMAP_ERROR;
+    size_t best_size = size + 1; /* 최대 크기보다 큰 값으로 초기화 */
+    size_t current_idx = 0;
+    
+    /* Best Fit은 직접 순회하며 최적의 위치를 찾습니다. */
+    while (current_idx < size) {
+        /* 현재 위치에서 빈 페이지 블록의 크기를 찾습니다. */
+        size_t free_run_len = bitmap_scan(pool->used_map, current_idx, 
+                                           size - current_idx, 1, false);
+
+        /* 빈 블록을 찾지 못했다면 검색 종료 */
+        if (free_run_len == BITMAP_ERROR) {
+            break;
+        }
+
+        /* 빈 블록의 끝 인덱스를 찾습니다. */
+        size_t run_end_idx = free_run_len + bitmap_scan(pool->used_map, 
+                                                        free_run_len, 
+                                                        size - free_run_len, 
+                                                        1, true);
+        
+        /* 현재 빈 블록의 실제 크기 */
+        size_t current_run_size = run_end_idx - free_run_len;
+
+        /* 요청 크기를 만족하고, 현재까지 찾은 최적 크기보다 작은 경우 업데이트 */
+        if (current_run_size >= page_cnt && current_run_size < best_size) {
+            best_idx = free_run_len;
+            best_size = current_run_size;
+        }
+
+        /* 다음 검색은 현재 빈 블록이 끝나는 지점에서 시작 */
+        current_idx = run_end_idx;
+    }
+
+    /* 최적의 위치를 찾았다면 할당 */
+    if (best_idx != BITMAP_ERROR) {
+        bitmap_set_multiple(pool->used_map, best_idx, page_cnt, true);
+        return best_idx;
+    }
+
+    return BITMAP_ERROR;
+}
+
+
