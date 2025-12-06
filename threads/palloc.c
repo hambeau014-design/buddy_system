@@ -256,8 +256,7 @@ page_from_pool(const struct pool *pool, void *page)
 }
 //----------------------------------------------------------------------------------------------
 //next-fit방법 : 모든 hole 탐새 후 알맞는 빈 공간에 할당
-static size_t
-palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
+static size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
 {
     size_t page_idx = BITMAP_ERROR;
     size_t size = bitmap_size(pool->used_map);
@@ -283,8 +282,7 @@ palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
 }
 
 //best-fit방법 : 모든 hole 탐색 후 빈공간 많이 남는 곳에 할당
-static size_t
-palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
+static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
 {
     size_t size = bitmap_size(pool->used_map);
     size_t best_idx = BITMAP_ERROR;
