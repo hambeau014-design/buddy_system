@@ -10,9 +10,6 @@
 #include "threads/loader.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
-//[추가]
-static size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
-static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
 
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
