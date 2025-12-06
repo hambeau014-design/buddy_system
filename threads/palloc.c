@@ -81,6 +81,7 @@ palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
     struct pool *pool = flags & PAL_USER ? &user_pool : &kernel_pool;
     void *pages;
     size_t page_idx;
+   enum palloc_mode mode = palloc_mode; //모드 선언
 
     if (page_cnt == 0)
         return NULL;
