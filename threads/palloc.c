@@ -226,7 +226,7 @@ page_from_pool(const struct pool *pool, void *page)
     return page_no >= start_page && page_no < end_page;
 }
 //----------------------------------------------------------------------------------------------
-//firt-fit방법 : 가장 처음 연속된 빈 공간 발견시, 바로 할당
+//next-fit방법 : 모든 hole 탐새 후 알맞는 빈 공간에 할당
 static size_t
 palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
 {
@@ -253,7 +253,7 @@ palloc_next_fit_scan(struct pool *pool, size_t page_cnt)
     return page_idx;
 }
 
-//best-fit방법 : 모든 hole 탐새 후 알맞는 빈 공간에 할당
+//best-fit방법 : 모든 hole 탐색 후 빈공간 많이 남는 곳에 할당
 static size_t
 palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
 {
