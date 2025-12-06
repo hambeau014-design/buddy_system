@@ -163,12 +163,35 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
 
     page_idx = pg_no(pages) - pg_no(pool->base);
 
+   // [추가] 락 획득 (동기화)
+    lock_acquire(&pool->lock);
+    
+    // [추가] Buddy System 예외 처리
+    if (palloc_mode == PAL_BUDDY) {
+        // Buddy System의 해제 로직 (추후 구현할 병합(Merge) 로직 호출)
+        // 현재는 PANIC으로 미구현 상태임을 알림
+        lock_release(&pool->lock); 
+        PANIC("Buddy System free logic not implemented yet!");
+    }
+
 #ifndef NDEBUG
     memset(pages, 0xcc, PGSIZE * page_cnt);
 #endif
 
     ASSERT(bitmap_all(pool->used_map, page_idx, page_cnt));
     bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
+
+   // [추가] Next Fit 최적화 로직
+    // Next Fit 모드이고, 해제된 블록이 다음 검색 시작 위치(next_idx)보다 
+    // 앞에 있다면, next_idx를 이 블록의 시작 인덱스로 당겨서 검색 성능을 높입니다.
+    if (palloc_mode == PAL_NEXT_FIT) {
+        if (page_idx < pool->next_idx) {
+            pool->next_idx = page_idx;
+        }
+    }
+
+    // [추가] 락 해제
+    lock_release(&pool->lock);
 }
 
 /* Frees the page at PAGE. */
