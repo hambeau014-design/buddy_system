@@ -17,7 +17,9 @@ void palloc_free_page(void *);
 void palloc_free_multiple(void *, size_t page_cnt);
 size_t palloc_get_page_index(void *page);
 
-
+/*new function : next or best fir scan*/
+size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
+size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
 
 
 /* Contiguous allocation mode selector */
