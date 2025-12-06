@@ -25,8 +25,8 @@
    half to the user pool.  That should be huge overkill for the
    kernel pool, but that's just fine for demonstration purposes. */
 //[추가]
-size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
-size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
+static size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
+static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
 
 /* A memory pool. */
 struct pool {
