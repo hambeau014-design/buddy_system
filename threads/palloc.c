@@ -252,7 +252,7 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
     // 앞에 있다면, next_idx를 이 블록의 시작 인덱스로 당겨서 검색 성능을 높입니다.
     if (palloc_mode == PAL_NEXT_FIT) {
         if (page_idx < pool->next_idx) {
-            pool->next_idx = page_idx;
+            //pool->next_idx = page_idx;
         }
     }
  }
