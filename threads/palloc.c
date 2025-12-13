@@ -57,6 +57,9 @@ struct buddy_elem {
 /* 전체 가용 커널 페이지 수(N) 및 Buddy System의 최대 차수(K) */
 static size_t kernel_pool_max_pages; 
 static size_t buddy_system_max_k;
+static size_t get_buddy_order(size_t page_cnt)
+static size_t buddy_alloc(size_t page_cnt);
+
 
 static void init_pool(struct pool *, void *base, size_t page_cnt,
                       const char *name);
@@ -164,8 +167,10 @@ palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
             break;
 
         case PAL_BUDDY:
-            /* Buddy System: 여기에 Buddy System 할당 로직을 구현해야 함 */
-            PANIC("Buddy System is not implemented yet!");
+           /*Buddy System*/
+            lock_release(&pool->lock); // 락 해제 (Buddy System은 자체적으로 동기화 필요)
+            page_idx = buddy_alloc(page_cnt);
+            lock_acquire(&pool->lock); // 락 재획득 (반환 직전)
             break;
 
         default:
@@ -227,11 +232,10 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
     
     // [추가] Buddy System 예외 처리
     if (palloc_mode == PAL_BUDDY) {
-        // Buddy System의 해제 로직 (추후 구현할 병합(Merge) 로직 호출)
-        // 현재는 PANIC으로 미구현 상태임을 알림
-        lock_release(&pool->lock); 
-        PANIC("Buddy System free logic not implemented yet!");
-    }
+        lock_release(&pool->lock); // 락 해제 (Buddy System은 자체적으로 동기화 필요)
+        buddy_free(page_idx, page_cnt);
+        lock_acquire(&pool->lock); // 락 재획득 (반환 직전) 
+}else{
 
 #ifndef NDEBUG
     memset(pages, 0xcc, PGSIZE * page_cnt);
@@ -248,6 +252,7 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
             pool->next_idx = page_idx;
         }
     }
+ }
 
     // [추가] 락 해제
     lock_release(&pool->lock);
@@ -379,6 +384,117 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
     }
 
     return BITMAP_ERROR;
+}
+
+static size_t
+get_buddy_order(size_t page_cnt)
+{
+    size_t k = 0;
+    size_t size = 1;
+    
+    // page_cnt를 포함하는 최소의 2의 거듭제곱(2^k)을 찾습니다.
+    while (size < page_cnt) {
+        size *= 2;
+        k++;
+    }
+    return k;
+}
+//----------------------------------------------------------------------------
+/* Buddy System 할당 로직 */
+static size_t
+buddy_alloc(size_t page_cnt)
+{
+    size_t alloc_k = get_buddy_order(page_cnt);
+    size_t k = alloc_k;
+    size_t page_idx = BITMAP_ERROR;
+
+    /* 1. k 차수 이상의 빈 블록 검색 */
+    while (k <= buddy_system_max_k) {
+        if (!list_empty(&buddy_free_list[k])) {
+            // 빈 블록 발견: 리스트에서 꺼냄
+            struct list_elem *e = list_pop_front(&buddy_free_list[k]);
+            struct buddy_elem *elem = list_entry(e, struct buddy_elem, elem);
+            page_idx = elem->page_idx;
+            
+            break; 
+        }
+        k++;
+    }
+
+    if (page_idx == BITMAP_ERROR) {
+        return BITMAP_ERROR; // 메모리 부족
+    }
+
+    /* 2. 분할 (Split) */
+    while (k > alloc_k) {
+        k--; // 차수 감소
+        size_t block_size = 1 << k; // 2^k
+        
+        // 버디 블록 인덱스: 현재 인덱스 + 블록 크기
+        size_t buddy_idx = page_idx + block_size; 
+        
+        // 버디 블록을 다음 작은 차수(k)의 빈 리스트에 추가 (Split)
+        struct buddy_elem *buddy_elem = 
+            (struct buddy_elem *)palloc_get_multiple(PAL_ASSERT, 
+                                                     DIV_ROUND_UP(sizeof(struct buddy_elem), PGSIZE));
+        buddy_elem->page_idx = buddy_idx;
+        list_push_back(&buddy_free_list[k], &buddy_elem->elem);
+    }
+    
+    return page_idx;
+}
+
+/* Buddy System 해제 및 병합 로직 */
+static void
+buddy_free(size_t page_idx, size_t page_cnt)
+{
+    size_t k = get_buddy_order(page_cnt);
+    size_t block_size = 1 << k;
+
+    if (block_size != page_cnt) {
+        // 요청된 해제 크기가 2의 거듭제곱이 아닌 경우 Buddy System 규칙 위반
+        PANIC("Buddy System free size is not power of 2: %zu", page_cnt);
+    }
+
+    /* 병합 (Merge) */
+    while (k < buddy_system_max_k) {
+        size_t buddy_idx = page_idx ^ block_size; // 버디 인덱스 계산 (XOR 연산)
+        struct list *free_list = &buddy_free_list[k];
+        struct list_elem *e;
+        
+        bool merged = false;
+        
+        // 해당 차수 k의 빈 리스트에서 버디 블록 검색
+        for (e = list_begin(free_list); e != list_end(free_list); e = list_next(e)) {
+            struct buddy_elem *buddy_elem = list_entry(e, struct buddy_elem, elem);
+            
+            if (buddy_elem->page_idx == buddy_idx) {
+                // 버디 블록 발견 (병합)
+                list_remove(e);
+                
+                // 버디 엘리먼트 메모리 해제
+                // palloc_free_multiple(buddy_elem, DIV_ROUND_UP(sizeof(struct buddy_elem), PGSIZE));
+
+                // 새로운 부모 블록의 시작 인덱스 결정
+                page_idx = MIN(page_idx, buddy_idx);
+                k++; // 차수 증가 (블록 크기 두 배)
+                block_size *= 2;
+                merged = true;
+                break;
+            }
+        }
+        
+        if (!merged) {
+            break; // 버디 블록이 비어있지 않으므로 병합 종료
+        }
+    }
+    
+    // 최종 블록을 해당 차수의 빈 리스트에 추가
+    struct buddy_elem *elem = 
+        (struct buddy_elem *)palloc_get_multiple(PAL_ASSERT, 
+                                                 DIV_ROUND_UP(sizeof(struct buddy_elem), PGSIZE));
+    elem->page_idx = page_idx;
+    list_push_back(&buddy_free_list[k], &elem->elem);
 }
 
 
