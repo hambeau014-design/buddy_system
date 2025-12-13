@@ -205,13 +205,6 @@ palloc_get_multiple(enum palloc_flags flags, size_t page_cnt)
    then the page is filled with zeros.  If no pages are
    available, returns a null pointer, unless PAL_ASSERT is set in
    FLAGS, in which case the kernel panics. */
-void *
-palloc_get_page(enum palloc_flags flags)
-{
-    return palloc_get_multiple(flags, 1);
-}
-
-/* Frees the PAGE_CNT pages starting at PAGES. */
 void palloc_free_multiple(void *pages, size_t page_cnt)
 {
     struct pool *pool;
@@ -230,16 +223,21 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
 
     page_idx = pg_no(pages) - pg_no(pool->base);
 
-   // [추가] 락 획득 (동기화)
+    // [1] 락 획득 (동기화)
     lock_acquire(&pool->lock);
     
-    // [추가] Buddy System 예외 처리
+    // [2] Buddy System 예외 처리 (여기서 Buddy System 처리를 끝내고 goto로 이동해야 합니다.)
     if (palloc_mode == PAL_BUDDY) {
-        lock_release(&pool->lock); // 락 해제 (Buddy System은 자체적으로 동기화 필요)
-        buddy_free(page_idx, page_cnt);
-        lock_acquire(&pool->lock); // 락 재획득 (반환 직전) 
-}else{
+        lock_release(&pool->lock); // 비트맵 락 해제
+        
+        // buddy_free 호출 (내부적으로 Buddy System 리스트 락을 사용해야 함)
+        buddy_free(page_idx, page_cnt); 
+        
+        // Buddy System은 비트맵 조작이 필요 없으므로 바로 종료 레이블로 이동합니다.
+        goto done; 
+    }
 
+    // [3] 비트맵 방식 (First/Next/Best Fit) 처리
 #ifndef NDEBUG
     memset(pages, 0xcc, PGSIZE * page_cnt);
 #endif
@@ -247,17 +245,31 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
     ASSERT(bitmap_all(pool->used_map, page_idx, page_cnt));
     bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
 
-   // [추가] Next Fit 최적화 로직
-    // Next Fit 모드이고, 해제된 블록이 다음 검색 시작 위치(next_idx)보다 
-    // 앞에 있다면, next_idx를 이 블록의 시작 인덱스로 당겨서 검색 성능을 높입니다.
     if (palloc_mode == PAL_NEXT_FIT) {
         if (page_idx < pool->next_idx) {
             //pool->next_idx = page_idx;
         }
     }
- }
 
-    // [추가] 락 해제
+done:
+    if (palloc_mode == PAL_BUDDY) {
+        buddy_free(page_idx, page_cnt);
+        return; 
+    }
+
+    // [비트맵 방식] 락 획득 (Buddy System이 아닌 경우에만)
+    lock_acquire(&pool->lock); 
+    
+    // ... (memset, ASSERT, bitmap_set_multiple 로직) ...
+
+    // [Next Fit 최적화 로직]
+    if (palloc_mode == PAL_NEXT_FIT) {
+        if (page_idx < pool->next_idx) {
+            //pool->next_idx = page_idx;
+        }
+    }
+    
+    // [비트맵 방식] 락 해제
     lock_release(&pool->lock);
 }
 
@@ -347,19 +359,17 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
 {
     size_t size = bitmap_size(pool->used_map);
     size_t best_idx = BITMAP_ERROR;
-    size_t best_size = size + 1; 
+    size_t best_size = size + 1;
     size_t current_idx = 0;
     
-    /* Best Fit은 직접 순회하며 최적의 위치를 찾습니다. */
     while (current_idx < size) {
-        
-        // 1. 현재 위치에서 빈 블록 시작 인덱스를 찾습니다. (요청 크기 검사는 나중에)
+        // 1. 현재 위치에서 빈 블록 시작 인덱스를 찾습니다.
+        // Pintos의 bitmap_scan은 요청 크기(page_cnt) 체크를 직접 하지 못하므로, 빈 블록의 시작만 찾습니다.
         size_t free_start_idx = bitmap_scan(pool->used_map, current_idx, 
-                                            size - current_idx, false); // bitmap_scan은 시작 인덱스를 반환
+                                            size - current_idx, false); 
 
-        /* 빈 블록을 찾지 못했다면 검색 종료 */
         if (free_start_idx == BITMAP_ERROR) {
-            break;
+            break; 
         }
 
         // 2. 찾은 빈 블록의 실제 크기를 확인합니다.
@@ -369,10 +379,8 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
         
         size_t current_run_size;
         if (used_start_idx == BITMAP_ERROR) {
-            // 끝까지 빈 공간인 경우
             current_run_size = size - free_start_idx;
         } else {
-            // 빈 공간의 실제 크기
             current_run_size = used_start_idx - free_start_idx;
         }
 
@@ -382,11 +390,11 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
             best_size = current_run_size;
         }
 
-        /* 4. 다음 검색은 현재 빈 블록이 끝나는 지점(used_start_idx)부터 시작. */
+        /* 4. 다음 검색은 현재 빈 블록이 끝나는 지점부터 시작합니다. 
+           (빈 블록 끝 -> 사용 중인 블록 시작점) */
         current_idx = used_start_idx == BITMAP_ERROR ? size : used_start_idx;
     }
 
-    /* 최적의 위치를 찾았다면 할당 */
     if (best_idx != BITMAP_ERROR) {
         bitmap_set_multiple(pool->used_map, best_idx, page_cnt, true);
         return best_idx;
