@@ -57,7 +57,7 @@ struct buddy_elem {
 /* 전체 가용 커널 페이지 수(N) 및 Buddy System의 최대 차수(K) */
 static size_t kernel_pool_max_pages; 
 static size_t buddy_system_max_k;
-static size_t get_buddy_order(size_t page_cnt)
+static size_t get_buddy_order(size_t page_cnt);
 static size_t buddy_alloc(size_t page_cnt);
 
 
