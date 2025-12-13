@@ -59,6 +59,7 @@ static size_t kernel_pool_max_pages;
 static size_t buddy_system_max_k;
 static size_t get_buddy_order(size_t page_cnt);
 static size_t buddy_alloc(size_t page_cnt);
+static void buddy_free(size_t page_idx, size_t page_cnt);
 
 
 static void init_pool(struct pool *, void *base, size_t page_cnt,
