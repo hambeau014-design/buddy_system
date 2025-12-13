@@ -41,6 +41,23 @@ struct pool {
 /* Two pools: one for kernel data, one for user pages. */
 static struct pool kernel_pool, user_pool;
 
+/* Buddy System Globals */
+#define BUDDY_SYSTEM_MAX_ORDER 10 // 최대 차수(k)의 상한선 (일반적으로 10~15)
+
+/* 각 차수(2^k 페이지)별로 빈 블록의 시작 인덱스를 관리하는 리스트 배열. 
+   buddy_free_list[k]는 2^k 크기의 빈 블록 리스트입니다. */
+static struct list buddy_free_list[BUDDY_SYSTEM_MAX_ORDER + 1]; 
+
+/* 빈 블록을 리스트에 연결하기 위한 구조체 */
+struct buddy_elem {
+    struct list_elem elem;
+    size_t page_idx; // 블록의 시작 페이지 인덱스
+};
+
+/* 전체 가용 커널 페이지 수(N) 및 Buddy System의 최대 차수(K) */
+static size_t kernel_pool_max_pages; 
+static size_t buddy_system_max_k;
+
 static void init_pool(struct pool *, void *base, size_t page_cnt,
                       const char *name);
 static bool page_from_pool(const struct pool *, void *page);
@@ -76,6 +93,39 @@ void palloc_init(size_t user_page_limit)
     init_pool(&kernel_pool, free_start, kernel_pages, "kernel pool");
     init_pool(&user_pool, free_start + kernel_pages * PGSIZE,
               user_pages, "user pool");
+
+   /* --- [Buddy System 초기화 시작] --- */
+    kernel_pool_max_pages = bitmap_size(kernel_pool.used_map);
+    
+    // K 값 계산: 2^K >= N 인 최소 K 찾기
+    buddy_system_max_k = 0;
+    size_t temp_size = 1;
+    while (temp_size < kernel_pool_max_pages) {
+        temp_size *= 2;
+        buddy_system_max_k++;
+    }
+
+    if (buddy_system_max_k > BUDDY_SYSTEM_MAX_ORDER) {
+        PANIC("Kernel memory is too large for Buddy System implementation.");
+    }
+    
+    // 빈 리스트 초기화
+    for (size_t k = 0; k <= buddy_system_max_k; k++) {
+        list_init(&buddy_free_list[k]);
+    }
+
+    // 최대 크기 블록(2^K)을 빈 리스트에 추가
+    struct buddy_elem *initial_elem = 
+        (struct buddy_elem *)palloc_get_multiple(PAL_ASSERT, 
+                                                 DIV_ROUND_UP(sizeof(struct buddy_elem), PGSIZE));
+    
+    // Buddy System은 메모리 인덱스 0부터 시작한다고 가정
+    initial_elem->page_idx = 0; 
+    list_push_back(&buddy_free_list[buddy_system_max_k], &initial_elem->elem);
+
+    printf("Buddy System initialized: Max pages=%zu, Max order K=%zu\n", 
+           kernel_pool_max_pages, buddy_system_max_k);
+    /* --- [Buddy System 초기화 종료] --- */
 }
 
 /* Obtains and returns a group of PAGE_CNT contiguous free pages.
