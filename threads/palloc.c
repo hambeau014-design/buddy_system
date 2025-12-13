@@ -347,37 +347,43 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
 {
     size_t size = bitmap_size(pool->used_map);
     size_t best_idx = BITMAP_ERROR;
-    size_t best_size = size + 1; /* 최대 크기보다 큰 값으로 초기화 */
+    size_t best_size = size + 1; 
     size_t current_idx = 0;
     
     /* Best Fit은 직접 순회하며 최적의 위치를 찾습니다. */
     while (current_idx < size) {
-        /* 현재 위치에서 빈 페이지 블록의 크기를 찾습니다. */
-        size_t free_run_len = bitmap_scan(pool->used_map, current_idx, 
-                                           size - current_idx, false);
+        
+        // 1. 현재 위치에서 빈 블록 시작 인덱스를 찾습니다. (요청 크기 검사는 나중에)
+        size_t free_start_idx = bitmap_scan(pool->used_map, current_idx, 
+                                            size - current_idx, false); // bitmap_scan은 시작 인덱스를 반환
 
         /* 빈 블록을 찾지 못했다면 검색 종료 */
-        if (free_run_len == BITMAP_ERROR) {
+        if (free_start_idx == BITMAP_ERROR) {
             break;
         }
 
-        /* 빈 블록의 끝 인덱스를 찾습니다. */
-        size_t run_end_idx = free_run_len + bitmap_scan(pool->used_map, 
-                                                        free_run_len, 
-                                                        size - free_run_len 
-                                                        , true);
+        // 2. 찾은 빈 블록의 실제 크기를 확인합니다.
+        // 다음으로 사용 중인(true) 비트의 시작 인덱스를 찾아 빈 블록의 끝을 확인합니다.
+        size_t used_start_idx = bitmap_scan(pool->used_map, free_start_idx, 
+                                            size - free_start_idx, true);
         
-        /* 현재 빈 블록의 실제 크기 */
-        size_t current_run_size = run_end_idx - free_run_len;
+        size_t current_run_size;
+        if (used_start_idx == BITMAP_ERROR) {
+            // 끝까지 빈 공간인 경우
+            current_run_size = size - free_start_idx;
+        } else {
+            // 빈 공간의 실제 크기
+            current_run_size = used_start_idx - free_start_idx;
+        }
 
-        /* 요청 크기를 만족하고, 현재까지 찾은 최적 크기보다 작은 경우 업데이트 */
+        /* 3. 요청 크기를 만족하고, 현재까지 찾은 최적 크기보다 작은 경우 업데이트 */
         if (current_run_size >= page_cnt && current_run_size < best_size) {
-            best_idx = free_run_len;
+            best_idx = free_start_idx;
             best_size = current_run_size;
         }
 
-        /* 다음 검색은 현재 빈 블록이 끝나는 지점에서 시작 */
-        current_idx = run_end_idx;
+        /* 4. 다음 검색은 현재 빈 블록이 끝나는 지점(used_start_idx)부터 시작. */
+        current_idx = used_start_idx == BITMAP_ERROR ? size : used_start_idx;
     }
 
     /* 최적의 위치를 찾았다면 할당 */
