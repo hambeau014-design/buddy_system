@@ -11,9 +11,6 @@
 #include "threads/synch.h"
 #include "threads/vaddr.h"
 
-static size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
-static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
-
 /* Page allocator.  Hands out memory in page-size (or
    page-multiple) chunks.  See malloc.h for an allocator that
    hands out smaller chunks.
@@ -50,6 +47,9 @@ static bool page_from_pool(const struct pool *, void *page);
 
 /* Current allocation mode. */
 static enum palloc_mode palloc_mode = PAL_FIRST_FIT;
+
+static size_t palloc_next_fit_scan(struct pool *pool, size_t page_cnt);
+static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt);
 
 /* Sets the allocation mode. */
 void
