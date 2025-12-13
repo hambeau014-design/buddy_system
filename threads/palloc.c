@@ -474,10 +474,7 @@ buddy_free(size_t page_idx, size_t page_cnt)
             if (buddy_elem->page_idx == buddy_idx) {
                 // 버디 블록 발견 (병합)
                 list_remove(e);
-                
-                // 버디 엘리먼트 메모리 해제
-                // palloc_free_multiple(buddy_elem, DIV_ROUND_UP(sizeof(struct buddy_elem), PGSIZE));
-
+               
                 // 새로운 부모 블록의 시작 인덱스 결정
                 page_idx = MIN(page_idx, buddy_idx);
                 k++; // 차수 증가 (블록 크기 두 배)
