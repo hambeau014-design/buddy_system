@@ -33,10 +33,10 @@ struct pool {
     struct bitmap *used_map; /* Bitmap of free pages. */
     uint8_t *base;           /* Base of pool. */
 
-   //[추가]다음 Fit 검색을 시작할 인덱스 (Next-Fit 구현에 필수)
+   //[추가]다음 Fit 검색을 시작할 인덱스
     size_t next_idx;            /* Index to start the next scan for next-fit. */ 
     
-    //[추가]pool에 포함된 총 페이지 수 (bitmap_size()와 동일할 수 있으나, 일반적으로 명시)
+    //[추가]pool에 포함된 총 페이지 수
     size_t pages;               /* Total number of pages in the pool. */
 };
 
@@ -44,7 +44,7 @@ struct pool {
 static struct pool kernel_pool, user_pool;
 
 /* Buddy System Globals */
-#define BUDDY_SYSTEM_MAX_ORDER 10 // 최대 차수(k)의 상한선 (일반적으로 10~15)
+#define BUDDY_SYSTEM_MAX_ORDER 10 // 최대 차수(k)의 상한선
 
 /* 각 차수(2^k 페이지)별로 빈 블록의 시작 인덱스를 관리하는 리스트 배열. 
    buddy_free_list[k]는 2^k 크기의 빈 블록 리스트입니다. */
@@ -248,8 +248,6 @@ void palloc_free_multiple(void *pages, size_t page_cnt)
     bitmap_set_multiple(pool->used_map, page_idx, page_cnt, false);
 
    // [추가] Next Fit 최적화 로직
-    // Next Fit 모드이고, 해제된 블록이 다음 검색 시작 위치(next_idx)보다 
-    // 앞에 있다면, next_idx를 이 블록의 시작 인덱스로 당겨서 검색 성능을 높입니다.
     if (palloc_mode == PAL_NEXT_FIT) {
         if (page_idx < pool->next_idx) {
             pool->next_idx = page_idx;
@@ -350,9 +348,9 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
     size_t best_size = size + 1; /* 최대 크기보다 큰 값으로 초기화 */
     size_t current_idx = 0;
     
-    /* Best Fit은 직접 순회하며 최적의 위치를 찾습니다. */
+    /* Best Fit 직접 순회하며 최적의 위치*/
     while (current_idx < size) {
-        /* 현재 위치에서 빈 페이지 블록의 크기를 찾습니다. */
+        /*빈 페이지 블록의 크기*/
         size_t free_run_len = bitmap_scan(pool->used_map, current_idx, 
                                            size - current_idx, false);
 
@@ -361,7 +359,7 @@ static size_t palloc_best_fit_scan(struct pool *pool, size_t page_cnt)
             break;
         }
 
-        /* 빈 블록의 끝 인덱스를 찾습니다. */
+        /* 빈 블록의 끝 인덱스*/
         size_t run_end_idx = free_run_len + bitmap_scan(pool->used_map, 
                                                         free_run_len, 
                                                         size - free_run_len 
@@ -395,7 +393,7 @@ get_buddy_order(size_t page_cnt)
     size_t k = 0;
     size_t size = 1;
     
-    // page_cnt를 포함하는 최소의 2의 거듭제곱(2^k)을 찾습니다.
+    // page_cnt를 포함하는 최소의 2의 거듭제곱(2^k)
     while (size < page_cnt) {
         size *= 2;
         k++;
@@ -461,7 +459,7 @@ buddy_free(size_t page_idx, size_t page_cnt)
 
     /* 병합 (Merge) */
     while (k < buddy_system_max_k) {
-        size_t buddy_idx = page_idx ^ block_size; // 버디 인덱스 계산 (XOR 연산)
+        size_t buddy_idx = page_idx ^ block_size;
         struct list *free_list = &buddy_free_list[k];
         struct list_elem *e;
         
