@@ -46,8 +46,7 @@ static struct pool kernel_pool, user_pool;
 /* Buddy System Globals */
 #define BUDDY_SYSTEM_MAX_ORDER 10 // 최대 차수(k)의 상한선
 
-/* 각 차수(2^k 페이지)별로 빈 블록의 시작 인덱스를 관리하는 리스트 배열. 
-   buddy_free_list[k]는 2^k 크기의 빈 블록 리스트입니다. */
+/* 각 차수(2^k 페이지)별로 빈 블록의 시작 인덱스를 관리하는 리스트 배열*/
 static struct list buddy_free_list[BUDDY_SYSTEM_MAX_ORDER + 1]; 
 
 /* 빈 블록을 리스트에 연결하기 위한 구조체 */
